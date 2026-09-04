@@ -317,7 +317,7 @@ function attachSocketListeners() {
     render();
   });
 
-  socket.on("tally-updated", (payload) => {
+  socket.on("results:update", (payload) => {
     counts = payload.counts;
     total = payload.total;
     render();

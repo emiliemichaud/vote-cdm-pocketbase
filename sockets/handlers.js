@@ -6,6 +6,10 @@ const generateCode = customAlphabet('ABCDEFGHJKLMNPQRSTUVWXYZ23456789', 5);
 
 const room = (code) => `session:${code}`;
 const votersRoom = (code) => `voters:${code}`;
+const hostRoom = (code) => `host:${code}`;
+
+const tallyTimers = new Map();
+const TALLY_PUSH_INTERVAL_MS = 200;
 
 async function getSessionByCode(code) {
   const rows = await pool.query('SELECT * FROM sessions WHERE code = ?', [code]);
@@ -26,6 +30,29 @@ async function getTally(sessionId) {
 
 function onlineVoters(io, code) {
   return io.sockets.adapter.rooms.get(votersRoom(code))?.size || 0;
+}
+
+function scheduleTallyUpdate(io, code, sessionId) {
+  if (tallyTimers.has(code)) return;
+
+  const timer = setTimeout(async () => {
+    tallyTimers.delete(code);
+    try {
+      const { counts, total } = await getTally(sessionId);
+      io.to(hostRoom(code)).emit('results:update', { counts, total });
+    } catch (err) {
+      console.error('scheduleTallyUpdate', err);
+    }
+  }, TALLY_PUSH_INTERVAL_MS);
+
+  timer.unref?.();
+  tallyTimers.set(code, timer);
+}
+
+function cancelTallyUpdate(code) {
+  const timer = tallyTimers.get(code);
+  if (timer) clearTimeout(timer);
+  tallyTimers.delete(code);
 }
 
 // Temps restant réel avant la fin du vote, calculé depuis voting_ends_at
@@ -67,6 +94,7 @@ function registerHandlers(io, socket) {
         return ack?.({ ok: false, error: 'Lien invalide ou expiré' });
       }
       socket.join(room(code));
+      socket.join(hostRoom(code));
       socket.data.code = code;
       const { counts, total } = await getTally(session.id);
       ack?.({
@@ -103,7 +131,7 @@ function registerHandlers(io, socket) {
       let total = 0;
       if (session.status === 'results') ({ counts, total } = await getTally(session.id));
 
-      io.to(room(session.code)).emit('presence-updated', { onlineCount: onlineVoters(io, session.code) });
+      io.to(hostRoom(session.code)).emit('presence-updated', { onlineCount: onlineVoters(io, session.code) });
 
       ack?.({
         ok: true,
@@ -143,8 +171,7 @@ function registerHandlers(io, socket) {
         throw err;
       }
 
-      const { counts, total } = await getTally(session.id);
-      io.to(room(code)).emit('tally-updated', { counts, total });
+      scheduleTallyUpdate(io, session.code, session.id);
 
       ack?.({ ok: true, alreadyVoted: false });
     } catch (err) {
@@ -208,6 +235,7 @@ function registerHandlers(io, socket) {
 
   socket.on('new-item', ({ code, hostSecret }, ack) =>
     withHost(code, hostSecret, ack, async (session) => {
+      cancelTallyUpdate(code);
       await pool.query('DELETE FROM votes WHERE session_id = ?', [session.id]);
       await pool.query(
         `UPDATE sessions SET status = 'idle', voting_ends_at = NULL WHERE id = ?`,
@@ -220,6 +248,7 @@ function registerHandlers(io, socket) {
 
   socket.on('close-session', ({ code, hostSecret }, ack) =>
     withHost(code, hostSecret, ack, async (session) => {
+      cancelTallyUpdate(code);
       await pool.query('DELETE FROM votes WHERE session_id = ?', [session.id]);
       await pool.query('DELETE FROM sessions WHERE id = ?', [session.id]);
       io.to(room(code)).emit('session-closed', { reason: 'closed' });
@@ -230,7 +259,7 @@ function registerHandlers(io, socket) {
   socket.on('disconnect', () => {
     const code = socket.data.code;
     if (code) {
-      io.to(room(code)).emit('presence-updated', { onlineCount: onlineVoters(io, code) });
+      io.to(hostRoom(code)).emit('presence-updated', { onlineCount: onlineVoters(io, code) });
     }
   });
 }
