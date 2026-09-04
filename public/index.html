@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vote — Accueil</title>
+<link rel="stylesheet" href="style.css" />
+<script src="/socket.io/socket.io.js"></script>
+<script src="app.js"></script>
+</head>
+<body>
+  <div class="masthead">
+    <div class="eyebrow">Séance de vote</div>
+    <h1>Vote</h1>
+  </div>
+
+   <div class="card center stack">
+    <div class="eyebrow" style="margin-bottom:4px;">Se connecter à une session</div>
+    <p class="hint">
+      Vous avez déjà un code de session ? Saisissez-le pour rejoindre le vote.
+    </p>
+    <input id="joinCode" class="code-input" type="text" placeholder="CODE" maxlength="5"
+           autocapitalize="characters" autocomplete="off" inputmode="text" />
+    <button id="joinBtn" class="secondary">Rejoindre la session</button>
+    <p id="joinErr" class="hint" style="color:#8c2f27; display:none;"></p>
+  </div>
+
+
+  <div class="card center stack">
+    <div class="eyebrow" style="margin-bottom:4px;">Créer une session de votes</div>
+    <p class="hint">
+      Crée une nouvelle session, projette le QR code affiché à l'écran suivant,
+      et pilote les votes depuis cette même page.
+    </p>
+    <button id="createBtn">Démarrer une session</button>
+    <p id="err" class="hint" style="color:#8c2f27; display:none;"></p>
+  </div>
+
+
+
+  <script src="index.js"></script>
+  <p class="hint" style="margin-top:16px;"><a href="confidentialite.html">Confidentialité</a></p>
+</body>
+</html>

@@ -1,0 +1,15 @@
+# Dépendances (réinstallées via npm install)
+node_modules/
+
+# Secrets — ne jamais pusher
+.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Fichiers système
+.DS_Store
+
+# Installation locale
+INSTALL_LOCAL.md
