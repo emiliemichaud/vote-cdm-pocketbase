@@ -1,10 +1,8 @@
 # Dépendances (réinstallées via npm install)
 node_modules/
 
-# Secrets — ne jamais pusher
 .env
 
-# Logs
 *.log
 npm-debug.log*
 
