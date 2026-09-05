@@ -68,7 +68,6 @@ function render() {
 
   app.innerHTML = `
     <button class="panel-toggle-btn" id="openPanelBtn">☰ Infos Session</button>
-    <button class="panel-toggle-btn" id="downloadPdfBtn" style="top: 76px;">Télécharger les résultats</button>
 
     <div class="side-panel ${isDrawerOpen ? 'open' : ''}" id="sidePanel">
       <button class="panel-close-btn" id="closePanelBtn">&times;</button>
@@ -108,7 +107,10 @@ function render() {
         ${lowerContent}
 
         <div class="card">
-          <button id="closeBtn" class="danger">Clôture de session</button>
+          <div class="stack">
+            <button id="downloadPdfBtn" class="secondary">Télécharger les résultats</button>
+            <button id="closeBtn" class="danger">Clôture de session</button>
+          </div>
           <p class="hint" style="margin-top:10px;">Ferme définitivement cette session et supprime tous ses votes de la base de données. Action irréversible.</p>
         </div>
       </div>
@@ -151,7 +153,7 @@ function render() {
 
   const dlBtn = document.getElementById("downloadPdfBtn");
   dlBtn.onclick = downloadPdf;
-  dlBtn.style.display = total > 0 ? "flex" : "none";
+  dlBtn.style.display = total > 0 ? "block" : "none";
   document.getElementById("closePanelBtn").onclick = () => {
     isDrawerOpen = false;
     document.getElementById("sidePanel").classList.remove("open");
