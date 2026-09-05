@@ -67,6 +67,7 @@ function render() {
 
   app.innerHTML = `
     <button class="panel-toggle-btn" id="openPanelBtn">☰ Infos Session</button>
+    <button class="panel-toggle-btn" id="downloadPdfBtn" style="top: 76px;">Télécharger les résultats</button>
 
     <div class="side-panel ${isDrawerOpen ? 'open' : ''}" id="sidePanel">
       <button class="panel-close-btn" id="closePanelBtn">&times;</button>
@@ -146,6 +147,10 @@ function render() {
     isDrawerOpen = true;
     document.getElementById("sidePanel").classList.add("open");
   };
+
+  const dlBtn = document.getElementById("downloadPdfBtn");
+  dlBtn.onclick = downloadPdf;
+  dlBtn.style.display = total > 0 ? "flex" : "none";
   document.getElementById("closePanelBtn").onclick = () => {
     isDrawerOpen = false;
     document.getElementById("sidePanel").classList.remove("open");
@@ -280,6 +285,12 @@ function resetSessionForNewItem() {
   const newBtn = document.getElementById("newBtn");
   if (newBtn) newBtn.disabled = true;
 
+  if (total > 0 || session.status === "results") {
+    let history = JSON.parse(sessionStorage.getItem("history_" + code) || "[]");
+    history.push({ numero: history.length + 1, pour: counts.pour, contre: counts.contre, abstention: counts.abstention, total: total });
+    sessionStorage.setItem("history_" + code, JSON.stringify(history));
+  }
+
   socket.emit("new-item", { code, hostSecret }, (res) => {
     if (!res.ok) {
       alert("Erreur : " + res.error);
@@ -380,3 +391,129 @@ function joinSession() {
 
 attachSocketListeners();
 socket.on("connect", joinSession);
+
+let isTypstInitialized = false;
+
+async function downloadPdf() {
+  const btn = document.getElementById("downloadPdfBtn");
+  const originalText = btn.innerHTML;
+  btn.innerHTML = "Génération...";
+  btn.disabled = true;
+
+  try {
+    const { $typst } = await import('https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js');
+    if (!isTypstInitialized) {
+      await $typst.setCompilerInitOptions({
+        getModule: () => 'https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0/pkg/typst_ts_web_compiler_bg.wasm'
+      });
+      
+      const fontUrls = [
+        'fonts/Arial.ttf',
+        'fonts/Arial Bold.ttf',
+        'fonts/Courier New.ttf',
+        'fonts/FiraCode-Regular.ttf',
+        'fonts/Helvetica.ttc',
+        'fonts/Menlo.ttc'
+      ];
+      const fontBuffers = (await Promise.all(
+        fontUrls.map(path => fetch(path).then(r => r.arrayBuffer()).catch(() => null))
+      )).filter(Boolean).map(buf => new Uint8Array(buf));
+
+      if (fontBuffers.length) {
+        const { TypstSnippet } = await import('https://cdn.jsdelivr.net/npm/@myriaddreamin/typst.ts/dist/esm/contrib/all-in-one-lite.bundle.js');
+        $typst.use(TypstSnippet.preloadFonts(fontBuffers));
+      }
+      isTypstInitialized = true;
+    }
+
+    const fetchTypstFile = async (path) => {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`Impossible de charger ${path} (Avez-vous redémarré le serveur Node ?)`);
+      return res.text();
+    };
+
+    const [libTyp, translationsTyp, showy, func, id, pre, sections, shadows] = await Promise.all([
+      fetchTypstFile('/typ/vote-card/lib.typ'),
+      fetchTypstFile('/typ/vote-card/translations.typ'),
+      fetchTypstFile('/typ/showybox/showy.typ'),
+      fetchTypstFile('/typ/showybox/lib/func.typ'),
+      fetchTypstFile('/typ/showybox/lib/id.typ'),
+      fetchTypstFile('/typ/showybox/lib/pre-rendering.typ'),
+      fetchTypstFile('/typ/showybox/lib/sections.typ'),
+      fetchTypstFile('/typ/showybox/lib/shadows.typ')
+    ]);
+
+    $typst.addSource('/typ/vote-card/lib.typ', libTyp);
+    // lib.typ importe "translations.typ", résolu dans le même dossier
+    $typst.addSource('/typ/vote-card/translations.typ', translationsTyp);
+    
+    // Ajout de showybox au système de fichiers virtuel
+    $typst.addSource('/typ/showybox/showy.typ', showy);
+    $typst.addSource('/typ/showybox/lib/func.typ', func);
+    $typst.addSource('/typ/showybox/lib/id.typ', id);
+    $typst.addSource('/typ/showybox/lib/pre-rendering.typ', pre);
+    $typst.addSource('/typ/showybox/lib/sections.typ', sections);
+    $typst.addSource('/typ/showybox/lib/shadows.typ', shadows);
+
+    const dateStr = new Date().toLocaleString('fr-FR', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+
+    const allResults = JSON.parse(sessionStorage.getItem("history_" + (session ? session.code : '')) || "[]");
+    if (total > 0 || (session && session.status === "results")) {
+      allResults.push({ numero: allResults.length + 1, pour: counts.pour, contre: counts.contre, abstention: counts.abstention, total: total });
+    }
+
+    const cardsTypst = allResults.map(r => `  [#vote-card(numero: ${r.numero}, pour: ${r.pour}, contre: ${r.contre}, abstention: ${r.abstention}, connexions: ${r.total})]`).join(',\n');
+
+    const typstCode = `
+#import "/typ/vote-card/lib.typ": vote-card
+#import "/typ/showybox/showy.typ": *
+
+#set page(margin: 1.5cm, fill: rgb("#ffffff"), footer: align(center)[Page #context here().page() sur #context counter(page).final().at(0) ])
+#set text(font: ("Helvetica", "Arial", "sans-serif"))
+
+#showybox(
+  frame: (
+    radius: 0pt,
+    thickness: 0.5pt,
+  ),
+  shadow: (
+    offset: 3pt,
+  ),
+  align: center,
+  align(center)[#text(size: 15pt)[Résultats des votes de la session ${session ? session.code : ''}]],
+)
+
+#v(2em)
+Document généré le ${dateStr}
+
+#v(2em)
+#grid(
+  columns: 3,
+  stroke: .0pt,
+  column-gutter: 1em,
+  row-gutter: 1em,
+  inset: 5pt,
+  align: center + horizon,
+${cardsTypst}
+)
+`;
+
+    $typst.addSource('/main.typ', typstCode);
+    const pdfBytes = await $typst.pdf({ mainFilePath: '/main.typ' });
+
+    const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    // On libérera l'URL au bout de quelques secondes pour être sûr que l'onglet l'a bien chargée
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  } catch (err) {
+    alert("Erreur lors de la génération du PDF : " + err.message);
+    console.error(err);
+  } finally {
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  }
+}

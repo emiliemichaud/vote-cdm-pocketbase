@@ -10,6 +10,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/typ', express.static(path.join(__dirname, 'typ')));
 
 // Lien court /CODE -> bulletin de vote 
 app.get('/:code', (req, res, next) => {
