@@ -47,11 +47,12 @@ function render() {
   let lowerContent = "";
   if (session.status === "results") {
     lowerContent = buildResultCard(counts, total, presentationMode, onlineCount);
-  } else if (!presentationMode) {
+  } else {
+    const onlineHtml = !presentationMode ? `<div class="turnout" style="margin-bottom:8px;">${onlineCount} connexion${onlineCount > 1 ? "s" : ""} en ce moment</div>` : "";
     lowerContent = `
     <div class="card">
       <div class="eyebrow center" style="display:block; margin-bottom:6px;">Dépouillement en direct</div>
-      <div class="turnout" style="margin-bottom:8px;">${onlineCount} connexion${onlineCount > 1 ? "s" : ""} en ce moment</div>
+      ${onlineHtml}
       <div class="tally">
         ${tallyRow("Pour", "pour", counts.pour, total)}
         ${tallyRow("Contre", "contre", counts.contre, total)}

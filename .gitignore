@@ -11,3 +11,4 @@ npm-debug.log*
 
 # Installation locale
 INSTALL_LOCAL.md
+start-db.sh
