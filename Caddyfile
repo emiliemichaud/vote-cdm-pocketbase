@@ -1,0 +1,11 @@
+:80 {
+    root * /usr/share/caddy
+    
+    file_server
+
+    # Pour émuler Cloudflare Pages :
+    # 1. Si on demande la racine (ou un dossier), on cherche index.html
+    # 2. Sinon on cherche le fichier exact ou avec l'extension .html (ex: /host -> /host.html)
+    # 3. En dernier recours (lien de session), on redirige sur /vote.html
+    try_files {path} {path}/index.html {path}.html /vote.html
+}

@@ -1,11 +1,11 @@
 const code = getSessionCodeFromLocation();
 const app = document.getElementById("app");
-const socket = getSocket();
 
 let session = null;
 let hasVoted = false;
 let counts = { pour: 0, contre: 0, abstention: 0 };
 let total = 0;
+let onlineCount = 0;
 let voting = false;
 const voterId = getVoterId();
 const DEFAULT_VOTE_SECONDS = 15;
@@ -118,37 +118,59 @@ function tallyRow(label, cls, count, total) {
   `;
 }
 
-function castVote(choice) {
+async function castVote(choice) {
   if (voting) return;
   voting = true;
   app.querySelectorAll(".choice-btn").forEach((b) => (b.disabled = true));
 
-  socket.emit("cast-vote", { code: session.code, voterId, choice }, (res) => {
-    voting = false;
-    if (!res.ok) {
-      alert("Erreur : " + res.error);
-      app.querySelectorAll(".choice-btn").forEach((b) => (b.disabled = false));
+  try {
+    if (!['voting', 'prolonged'].includes(session.status)) {
+       throw new Error("Le vote n'est pas ouvert");
+    }
+    
+    const existing = await pb.collection('votes').getFullList({ filter: `session="${session.id}" && voterId="${voterId}"` });
+    if (existing.length > 0) {
+      hasVoted = true;
+      voting = false;
+      render();
       return;
     }
+
+    await pb.collection('votes').create({
+      session: session.id,
+      voterId: voterId,
+      choice: choice
+    });
     hasVoted = true;
     render();
-  });
+  } catch(err) {
+    alert("Erreur : " + err.message);
+    app.querySelectorAll(".choice-btn").forEach((b) => (b.disabled = false));
+  } finally {
+    voting = false;
+  }
 }
 
-// --- Écoute des événements serveur (diffusion + resynchronisation) ---
-
 let listenersAttached = false;
-function attachSocketListeners() {
+function attachPbListeners() {
   if (listenersAttached) return;
   listenersAttached = true;
 
-  socket.on("session-updated", (payload) => {
-    if (!session) return;
+  pb.collection('sessions').subscribe(session.id, (e) => {
+    if (e.action === 'delete') {
+      session = null;
+      const expiryNote = document.getElementById("expiryNote");
+      if (expiryNote) expiryNote.style.display = "none";
+      app.innerHTML = `<div class="card center hint">Cette session a été clôturée et n'est plus disponible.</div>`;
+      return;
+    }
+    
     const previousStatus = session.status;
-    session.status = payload.status;
+    session = e.record;
 
     if (session.status === "voting" && previousStatus !== "voting") {
-      beginLocalTimer(payload.seconds || DEFAULT_VOTE_SECONDS);
+      const remainingMs = session.voting_ends_at ? new Date(session.voting_ends_at).getTime() - Date.now() : DEFAULT_VOTE_SECONDS * 1000;
+      beginLocalTimer(Math.max(0, remainingMs / 1000));
     } else if (session.status === "prolonged" && previousStatus !== "prolonged") {
       stopLocalTimer();
       render();
@@ -156,11 +178,7 @@ function attachSocketListeners() {
       stopLocalTimer();
     }
 
-    if (session.status === "results") {
-      counts = payload.counts;
-      total = payload.total;
-      render();
-    } else if (payload.reset) {
+    if (session.status === "idle" && previousStatus !== "idle") {
       hasVoted = false;
       counts = { pour: 0, contre: 0, abstention: 0 };
       total = 0;
@@ -169,35 +187,34 @@ function attachSocketListeners() {
       render();
     }
   });
-
-  socket.on("session-closed", () => {
-    session = null;
-    const expiryNote = document.getElementById("expiryNote");
-    if (expiryNote) expiryNote.style.display = "none";
-    app.innerHTML = `<div class="card center hint">Cette session a été clôturée et n'est plus disponible.</div>`;
+  
+  pb.collection('votes').subscribe('*', (e) => {
+    if (e.record.session === session.id) {
+       if (e.action === 'create') {
+         counts[e.record.choice]++;
+         total++;
+         if (session.status === 'results') render();
+       }
+    }
   });
 }
 
-// Rejoint la session : appelé à la connexion initiale ET à chaque
-// reconnexion socket (coupure Wi-Fi/4G), pour ne jamais rester bloqué
-// sur un état obsolète après une coupure.
-function joinSession() {
+async function joinSession() {
   if (!code) {
     app.innerHTML = `<div class="card center hint">Aucun code de session fourni.</div>`;
     return;
   }
-  socket.emit("join-as-voter", { code, voterId }, (res) => {
-    if (!res.ok) {
-      if (!session) {
-        app.innerHTML = `<div class="card center hint">Session introuvable. Vérifiez le code : <strong>${code}</strong></div>`;
-      }
-      return;
-    }
-    const wasVoting = session && (session.status === "voting" || session.status === "prolonged");
-    session = res.session;
-    hasVoted = res.hasVoted;
-    counts = res.counts;
-    total = res.total;
+  
+  try {
+    session = await pb.collection('sessions').getFirstListItem(`code="${code}"`);
+    
+    const votes = await pb.collection('votes').getFullList({ filter: `session="${session.id}"` });
+    counts = { pour: 0, contre: 0, abstention: 0 };
+    total = votes.length;
+    for (const v of votes) counts[v.choice]++;
+    
+    const myVote = votes.find(v => v.voterId === voterId);
+    hasVoted = !!myVote;
 
     const expiryNote = document.getElementById("expiryNote");
     const expiry = formatExpiryDate(session);
@@ -205,21 +222,24 @@ function joinSession() {
       expiryNote.textContent = `Cette session expirera automatiquement le ${expiry}.`;
       expiryNote.style.display = "block";
     }
+    
+    attachPbListeners();
+    startPresencePing(session.id, voterId);
 
-    if (session.status === "voting" && !countdownInterval) {
-      // Temps réellement restant calculé côté serveur, évite de redonner 15s pleines à quelqu'un qui se reconnecte en fin de vote.
-      beginLocalTimer(res.remainingSeconds > 0 ? res.remainingSeconds : 0);
+    if (session.status === "voting" && session.voting_ends_at) {
+      const remaining = new Date(session.voting_ends_at).getTime() - Date.now();
+      if (remaining > 0) beginLocalTimer(Math.round(remaining/1000));
+      else { stopLocalTimer(); render(); }
     } else if (session.status === "prolonged") {
       stopLocalTimer();
       render();
-    } else if (!wasVoting) {
+    } else {
       stopLocalTimer();
       render();
-    } else {
-      render();
     }
-  });
+  } catch (err) {
+    app.innerHTML = `<div class="card center hint">Session introuvable. Vérifiez le code : <strong>${code}</strong></div>`;
+  }
 }
 
-attachSocketListeners();
-socket.on("connect", joinSession);
+joinSession();

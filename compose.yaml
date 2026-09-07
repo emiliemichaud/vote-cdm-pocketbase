@@ -1,0 +1,19 @@
+services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    ports:
+      - "8090:8090"
+    volumes:
+      - pb_data:/pb_data
+    command: serve --dir=/pb_data --http=0.0.0.0:8090
+
+  frontend:
+    image: caddy:alpine
+    ports:
+      - "8788:80"
+    volumes:
+      - ./public:/usr/share/caddy
+      - ./Caddyfile:/etc/caddy/Caddyfile
+
+volumes:
+  pb_data:

@@ -2,11 +2,7 @@
 // Fonctions partagées entre host.html et vote.html
 // ============================================================
 
-let _socket;
-function getSocket() {
-  if (!_socket) _socket = io();
-  return _socket;
-}
+const pb = new PocketBase(window.POCKETBASE_URL || 'http://127.0.0.1:8090');
 
 // Identifiant anonyme et persistant du votant, propre à ce navigateur
 function getVoterId() {
@@ -51,4 +47,44 @@ function tallyCounts(votes) {
     if (counts[v.choice] !== undefined) counts[v.choice]++;
   }
   return counts;
+}
+
+// === PRESENCE TEMPS REEL ===
+let presenceRecord = null;
+async function startPresencePing(sessionId, vId) {
+  try {
+    const existing = await pb.collection('presence').getFullList({ filter: `session="${sessionId}" && voterId="${vId}"` });
+    for (const e of existing) await pb.collection('presence').delete(e.id);
+  } catch(e) {}
+  try { presenceRecord = await pb.collection('presence').create({ session: sessionId, voterId: vId }); } catch(e) {}
+  
+  setInterval(async () => {
+    if (presenceRecord) {
+      try { await pb.collection('presence').update(presenceRecord.id, {}); }
+      catch(e) {
+        try { presenceRecord = await pb.collection('presence').create({ session: sessionId, voterId: vId }); } catch(err) {}
+      }
+    }
+  }, 10000);
+
+  window.addEventListener('beforeunload', () => {
+    if (presenceRecord) pb.collection('presence').delete(presenceRecord.id);
+  });
+}
+
+async function subscribeToPresence(sessionId, onUpdate) {
+  const fetchCount = async () => {
+    try {
+      const d = new Date(Date.now() - 15000);
+      const str = d.toISOString().replace('T', ' ');
+      const records = await pb.collection('presence').getFullList({ filter: `session="${sessionId}" && updated >= "${str}"`, fields: 'id' });
+      onUpdate(records.length);
+    } catch(e) {}
+  };
+  await fetchCount();
+  setInterval(fetchCount, 5000); // Polling doux pour nettoyer les déconnexions sans delete
+  
+  pb.collection('presence').subscribe('*', (e) => {
+    if (e.record.session === sessionId) fetchCount();
+  });
 }

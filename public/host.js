@@ -2,7 +2,6 @@ const params = new URLSearchParams(window.location.search);
 const code = params.get("s");
 const hostSecret = params.get("t");
 const app = document.getElementById("app");
-const socket = getSocket();
 
 let session = null;
 let counts = { pour: 0, contre: 0, abstention: 0 };
@@ -236,52 +235,55 @@ function beginVoteTimer(seconds = DEFAULT_VOTE_SECONDS) {
   }, 50);
 }
 
-function startVoting() {
+async function startVoting() {
   beginVoteTimer(DEFAULT_VOTE_SECONDS);
-  socket.emit("start-voting", { code, hostSecret, seconds: DEFAULT_VOTE_SECONDS }, (res) => {
-    if (!res.ok) { clearVoteTimer(); alert("Erreur : " + res.error); return; }
-  });
+  try {
+    const endsAt = new Date(Date.now() + DEFAULT_VOTE_SECONDS * 1000).toISOString();
+    await pb.collection('sessions').update(session.id, { status: 'voting', voting_ends_at: endsAt });
+  } catch(err) {
+    clearVoteTimer();
+    alert("Erreur : " + err.message);
+  }
 }
 
-function prolongVoting() {
+async function prolongVoting() {
   if (!session || session.status === "prolonged") return;
-  socket.emit("prolong-voting", { code, hostSecret }, (res) => {
-    if (!res.ok) alert("Erreur : " + res.error);
-  });
+  try {
+    await pb.collection('sessions').update(session.id, { status: 'prolonged', voting_ends_at: "" });
+  } catch(err) { alert("Erreur : " + err.message); }
 }
 
-function stopVoting() {
-  socket.emit("stop-voting", { code, hostSecret }, (res) => {
-    if (!res.ok) alert("Erreur : " + res.error);
-  });
+async function stopVoting() {
+  try {
+    await pb.collection('sessions').update(session.id, { status: 'stopped', voting_ends_at: "" });
+  } catch(err) { alert("Erreur : " + err.message); }
 }
 
-function showResults() {
-  socket.emit("show-results", { code, hostSecret }, (res) => {
-    if (!res.ok) alert("Erreur : " + res.error);
-  });
+async function showResults() {
+  try {
+    await pb.collection('sessions').update(session.id, { status: 'results' });
+  } catch(err) { alert("Erreur : " + err.message); }
 }
 
-function closeSessionPermanently() {
+async function closeSessionPermanently() {
   if (!confirm("Clôturer définitivement cette session ? Tous les votes seront supprimés et le lien ne fonctionnera plus. Cette action est irréversible.")) {
     return;
   }
   const closeBtn = document.getElementById("closeBtn");
   if (closeBtn) closeBtn.disabled = true;
 
-  socket.emit("close-session", { code, hostSecret }, (res) => {
-    if (!res.ok) {
-      alert("Erreur : " + res.error);
-      if (closeBtn) closeBtn.disabled = false;
-      return;
-    }
+  try {
+    await pb.collection('sessions').delete(session.id);
     clearVoteTimer();
     session = null;
     app.innerHTML = `<div class="card center hint">Cette session a été clôturée et ses données ont été supprimées. <a href="index.html">Démarrer une nouvelle session</a></div>`;
-  });
+  } catch(err) {
+    alert("Erreur : " + err.message);
+    if (closeBtn) closeBtn.disabled = false;
+  }
 }
 
-function resetSessionForNewItem() {
+async function resetSessionForNewItem() {
   if (!confirm("Remettre les votes à zéro pour un nouvel objet, dans cette même session ? Les votes actuels seront définitivement supprimés.")) {
     return;
   }
@@ -294,107 +296,96 @@ function resetSessionForNewItem() {
     sessionStorage.setItem("history_" + code, JSON.stringify(history));
   }
 
-  socket.emit("new-item", { code, hostSecret }, (res) => {
-    if (!res.ok) {
-      alert("Erreur : " + res.error);
-      if (newBtn) newBtn.disabled = false;
-      return;
-    }
-  });
+  try {
+    const votes = await pb.collection('votes').getFullList({ filter: `session="${session.id}"` });
+    await Promise.all(votes.map(v => pb.collection('votes').delete(v.id)));
+    await pb.collection('sessions').update(session.id, { status: 'idle', voting_ends_at: "" });
+  } catch(err) {
+    alert("Erreur : " + err.message);
+    if (newBtn) newBtn.disabled = false;
+  }
 }
 
-// --- Écoute des événements serveur (diffusion + resynchronisation) ---
-
 let listenersAttached = false;
-function attachSocketListeners() {
+async function attachPbListeners() {
   if (listenersAttached) return;
   listenersAttached = true;
 
-  socket.on("session-updated", (payload) => {
-    if (!session) return;
+  pb.collection('sessions').subscribe(session.id, (e) => {
+    if (e.action === 'delete') {
+      clearVoteTimer();
+      session = null;
+      app.innerHTML = `<div class="card center hint">Cette session a été clôturée et ses données ont été supprimées. <a href="index.html">Démarrer une nouvelle session</a></div>`;
+      return;
+    }
     const previousStatus = session.status;
-    session.status = payload.status;
+    session = e.record;
 
-    if (payload.status === "voting" && previousStatus !== "voting") {
-      beginVoteTimer(payload.seconds || DEFAULT_VOTE_SECONDS);
-    } else if (payload.status !== "voting") {
+    if (session.status === "voting" && previousStatus !== "voting") {
+      const remainingMs = session.voting_ends_at ? new Date(session.voting_ends_at).getTime() - Date.now() : DEFAULT_VOTE_SECONDS * 1000;
+      beginVoteTimer(Math.max(0, remainingMs / 1000));
+    } else if (session.status !== "voting") {
       clearVoteTimer();
     }
-    if (payload.status === "results" && payload.counts) {
-      counts = payload.counts;
-      total = payload.total;
-    }
-    if (payload.reset) {
+    if (session.status === "idle" && previousStatus !== "idle") {
       counts = { pour: 0, contre: 0, abstention: 0 };
       total = 0;
     }
     render();
   });
 
-  socket.on("results:update", (payload) => {
-    counts = payload.counts;
-    total = payload.total;
-    render();
-  });
-
-  socket.on("presence-updated", (payload) => {
-    onlineCount = payload.onlineCount;
-    render();
-  });
-
-  socket.on("session-closed", () => {
-    clearVoteTimer();
-    session = null;
-    app.innerHTML = `<div class="card center hint">Cette session a été clôturée et ses données ont été supprimées. <a href="index.html">Démarrer une nouvelle session</a></div>`;
+  pb.collection('votes').subscribe('*', (e) => {
+    if (e.record.session === session.id) {
+      if (e.action === 'create') {
+        counts[e.record.choice]++;
+        total++;
+        render();
+      } else if (e.action === 'delete') {
+        counts[e.record.choice]--;
+        total--;
+        render();
+      }
+    }
   });
 }
 
-// Rejoint le dashboard : appelé à la connexion initiale ET à chaque
-// reconnexion socket (coupure Wi-Fi/4G), pour ne jamais rester bloqué
-// sur un état obsolète après une coupure.
-function joinSession() {
+async function joinSession() {
   if (!code || !hostSecret) {
     app.innerHTML = `<div class="card center hint">Lien invalide. <a href="index.html">Démarrer une nouvelle session</a></div>`;
     return;
   }
-  socket.emit("join-as-host", { code, hostSecret }, (res) => {
-    if (!res.ok) {
-      if (!session) {
-        app.innerHTML = `<div class="card center hint">Lien invalide ou expiré. <a href="index.html">Démarrer une nouvelle session</a></div>`;
-      }
-      return;
-    }
-    const wasVoting = session && (session.status === "voting" || session.status === "prolonged");
-    session = res.session;
-    counts = res.counts;
-    total = res.total;
-    onlineCount = res.onlineCount || 0;
+  
+  try {
+    session = await pb.collection('sessions').getFirstListItem(`code="${code}"`);
+    if (session.hostSecret !== hostSecret) throw new Error("Invalid secret");
+    
+    const votes = await pb.collection('votes').getFullList({ filter: `session="${session.id}"` });
+    counts = { pour: 0, contre: 0, abstention: 0 };
+    total = votes.length;
+    for (const v of votes) counts[v.choice]++;
+    
+    attachPbListeners();
 
-    // Si le vote était en cours et qu'aucun minuteur local ne tourne
-    // (ex : reprise après coupure réseau), on relance le minuteur sur le
-    // temps réellement restant (calculé côté serveur depuis voting_ends_at),
-    // pas sur une durée fixe.
-    if (session.status === "voting" && !countdownInterval) {
-      if (res.remainingSeconds > 0) {
-        beginVoteTimer(res.remainingSeconds);
-      } else {
-        // Le délai était déjà écoulé pendant la coupure : on clôt tout
-        // de suite plutôt que d'afficher un minuteur qui n'existe plus.
-        render();
-        stopVoting();
-        return;
-      }
-    } else if (session.status !== "voting" && !wasVoting) {
-      clearVoteTimer();
-    }
+    subscribeToPresence(session.id, (count) => {
+      onlineCount = count;
+      render();
+    });
 
+    if (session.status === "voting" && session.voting_ends_at) {
+      const remaining = new Date(session.voting_ends_at).getTime() - Date.now();
+      if (remaining > 0) beginVoteTimer(Math.round(remaining/1000));
+      else stopVoting();
+    }
+    
     render();
-  });
+  } catch(err) {
+    app.innerHTML = `<div class="card center hint">Lien invalide ou expiré. <a href="index.html">Démarrer une nouvelle session</a></div>`;
+  }
 }
 
-attachSocketListeners();
-socket.on("connect", joinSession);
+joinSession();
 
+// Typst generation logic (unchanged except removing onlineCount parameter usage)
 let isTypstInitialized = false;
 
 async function downloadPdf() {
@@ -431,7 +422,7 @@ async function downloadPdf() {
 
     const fetchTypstFile = async (path) => {
       const res = await fetch(path);
-      if (!res.ok) throw new Error(`Impossible de charger ${path} (Avez-vous redémarré le serveur Node ?)`);
+      if (!res.ok) throw new Error(`Impossible de charger ${path}`);
       return res.text();
     };
 
@@ -447,10 +438,8 @@ async function downloadPdf() {
     ]);
 
     $typst.addSource('/typ/vote-card/lib.typ', libTyp);
-    // lib.typ importe "translations.typ", résolu dans le même dossier
     $typst.addSource('/typ/vote-card/translations.typ', translationsTyp);
     
-    // Ajout de showybox au système de fichiers virtuel
     $typst.addSource('/typ/showybox/showy.typ', showy);
     $typst.addSource('/typ/showybox/lib/func.typ', func);
     $typst.addSource('/typ/showybox/lib/id.typ', id);
@@ -510,7 +499,6 @@ ${cardsTypst}
     const blob = new Blob([pdfBytes], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     window.open(url, '_blank');
-    // On libérera l'URL au bout de quelques secondes pour être sûr que l'onglet l'a bien chargée
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   } catch (err) {
     alert("Erreur lors de la génération du PDF : " + err.message);
