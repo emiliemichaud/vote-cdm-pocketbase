@@ -6,8 +6,8 @@ if (code && hostSecret) {
   sessionStorage.setItem("hostSecret", hostSecret);
   window.history.replaceState({}, '', '/host.html');
 } else {
-  code = sessionStorage.getItem("hostCode");
-  hostSecret = sessionStorage.getItem("hostSecret");
+  if (!code) code = sessionStorage.getItem("hostCode");
+  if (!hostSecret) hostSecret = sessionStorage.getItem("hostSecret");
 }
 
 const app = document.getElementById("app");
@@ -30,6 +30,7 @@ function statusLabel(s) {
 
 let isQrModalOpen = false;
 let isDrawerOpen = false;
+let lastReqsJson = "";
 
 function render() {
   if (session === "closed") return;
@@ -77,6 +78,7 @@ function render() {
 
   app.innerHTML = `
     <button class="panel-toggle-btn" id="openPanelBtn">☰ Infos Session</button>
+    <button class="panel-toggle-btn danger" id="waitingRoomBtn" style="display:none; top: 74px;">Salle d'attente</button>
 
     <div class="side-panel ${isDrawerOpen ? 'open' : ''}" id="sidePanel">
       <button class="panel-close-btn" id="closePanelBtn">&times;</button>
@@ -162,6 +164,7 @@ function render() {
 
   const dlBtn = document.getElementById("downloadPdfBtn");
   dlBtn.onclick = downloadPdf;
+  updateWaitingRoomBadge();
   dlBtn.style.display = total > 0 ? "block" : "none";
   document.getElementById("closePanelBtn").onclick = () => {
     isDrawerOpen = false;
@@ -364,9 +367,12 @@ async function attachPbListeners() {
 }
 
 async function joinSession() {
-  if (!code || !hostSecret) {
+  if (!code) {
     app.innerHTML = `<div class="card center hint">Lien invalide. <a href="index.html">Démarrer une nouvelle session</a></div>`;
     return;
+  }
+  if (!hostSecret) {
+    return showWaitingRoomRequest();
   }
   
   try {
@@ -524,3 +530,113 @@ ${cardsTypst}
     btn.disabled = false;
   }
 }
+
+
+async function showWaitingRoomRequest() {
+  app.innerHTML = `
+    <div class="card center" style="padding: 25px; max-width: 350px;">
+      <h3 style="margin-bottom:10px;">Demande d'accès organisateur</h3>
+      <p style="margin-bottom:20px;">Session : <strong>${code}</strong></p>
+      <input type="text" id="reqName" placeholder="Votre prénom..." style="width:100%; margin-bottom:15px; padding:10px; border-radius:5px; border:1px solid #ccc; font-size:16px;" />
+      <button id="reqBtn" class="primary" style="width:100%">Demander l'accès</button>
+      <p id="reqErr" class="hint" style="color:var(--danger); display:none; margin-top:15px;"></p>
+    </div>
+  `;
+  document.getElementById("reqBtn").onclick = async () => {
+    const name = document.getElementById("reqName").value.trim();
+    const btn = document.getElementById("reqBtn");
+    const err = document.getElementById("reqErr");
+    if (!name) return;
+    
+    btn.disabled = true;
+    err.style.display = "none";
+    try {
+      const sessionObj = await pb.collection('sessions').getFirstListItem(`code="${code}"`);
+      const req = await pb.collection('host_requests').create({
+        session: sessionObj.id,
+        name: name,
+        status: 'pending'
+      });
+      app.innerHTML = `<div class="card center hint">Demande envoyée.<br><br>En attente de l'approbation de l'organisateur principal...</div>`;
+      
+      pb.collection('host_requests').subscribe(req.id, (e) => {
+        if (e.action === 'update' && e.record.status === 'approved') {
+           sessionStorage.setItem("hostCode", code);
+           sessionStorage.setItem("hostSecret", e.record.secret_delivery);
+           window.location.reload();
+        } else if (e.action === 'update' && e.record.status === 'rejected') {
+           app.innerHTML = `<div class="card center hint" style="color:var(--danger)">L'accès vous a été refusé.</div>`;
+        } else if (e.action === 'delete') {
+           app.innerHTML = `<div class="card center hint">Cette session a été clôturée et n'est plus disponible.<br><br><a href="index.html">Retour à l'accueil</a></div>`;
+        }
+      });
+    } catch(e) {
+      err.textContent = "Erreur : " + e.message;
+      err.style.display = "block";
+      btn.disabled = false;
+    }
+  };
+}
+
+async function updateWaitingRoomBadge() {
+  if (!session) return;
+  try {
+    const reqs = await pb.collection('host_requests').getFullList({ filter: `session="${session.id}" && status="pending"` });
+    const btn = document.getElementById("waitingRoomBtn");
+    if (!btn) return;
+    if (reqs.length > 0) {
+      btn.textContent = `Salle d'attente (${reqs.length})`;
+      btn.style.display = "block";
+      btn.onclick = () => openWaitingRoomModal(reqs);
+      const newReqsJson = JSON.stringify(reqs.map(r => r.id + r.name + r.status));
+      if (document.getElementById("waitingModal") && lastReqsJson !== newReqsJson) {
+        openWaitingRoomModal(reqs);
+      }
+      lastReqsJson = newReqsJson;
+    } else {
+      btn.style.display = "none";
+      closeWaitingRoomModal();
+    }
+  } catch(e) {}
+}
+
+function openWaitingRoomModal(reqs) {
+  closeWaitingRoomModal();
+  let listHtml = reqs.map(r => `
+    <div style="display:grid; grid-template-columns: minmax(0, 1fr) auto; align-items:center; margin-bottom:12px; background:var(--paper-2); padding:10px 15px; border-radius:var(--radius); border:1px solid var(--rule); gap: 15px;">
+      <strong style="font-size:18px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${r.name.replace(/"/g, '&quot;')}">${r.name}</strong>
+      <div style="display:flex; gap:10px;">
+        <button onclick="approveRequest('${r.id}')">Approuver</button>
+        <button class="danger" onclick="rejectRequest('${r.id}')">Refuser</button>
+      </div>
+    </div>
+  `).join('');
+
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-overlay" id="waitingModal" style="display:flex; z-index: 1000;">
+      <div class="modal-content" style="max-width:500px; width:80%; padding:20px;">
+        <span class="modal-close" onclick="closeWaitingRoomModal()">&times;</span>
+        <h3 style="margin-bottom:20px; color:var(--navy-1);">Demandes d'accès</h3>
+        ${listHtml}
+      </div>
+    </div>
+  `);
+}
+
+window.closeWaitingRoomModal = function() {
+  const m = document.getElementById("waitingModal");
+  if (m) m.remove();
+}
+window.approveRequest = async (reqId) => {
+  try {
+    await pb.collection('host_requests').update(reqId, { status: 'approved', secret_delivery: hostSecret });
+    updateWaitingRoomBadge();
+  } catch(e) { alert(e.message); }
+};
+window.rejectRequest = async (reqId) => {
+  try {
+    await pb.collection('host_requests').update(reqId, { status: 'rejected' });
+    updateWaitingRoomBadge();
+  } catch(e) { alert(e.message); }
+};
+

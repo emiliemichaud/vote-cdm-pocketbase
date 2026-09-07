@@ -48,6 +48,21 @@ document.getElementById("createBtn").addEventListener("click", async () => {
   }
 });
 
+document.getElementById("joinHostBtn").addEventListener("click", (e) => {
+    e.preventDefault();
+    const joinErr = document.getElementById("joinErr");
+    const code = document.getElementById("joinCode").value.trim().toUpperCase();
+    joinErr.style.display = "none";
+    if (!code) {
+      joinErr.textContent = "Veuillez d'abord saisir un code de session.";
+      joinErr.style.display = "block";
+      return;
+    }
+    const url = new URL("host.html", window.location.href);
+    url.searchParams.set("s", code);
+    window.location.href = url.toString();
+  });
+
 document.getElementById("joinBtn").addEventListener("click", () => {
   const joinErr = document.getElementById("joinErr");
   const code = document.getElementById("joinCode").value.trim().toUpperCase();
