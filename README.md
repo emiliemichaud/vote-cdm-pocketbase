@@ -61,6 +61,8 @@ vote-cdm/
 │   ├── host.js             # Logique d'administration et d'affichage des résultats
 │   ├── vote.js             # Logique de participation et soumission des votes
 │   └── typ/                # Modèles Typst pour la génération de PDF
+├── pb_hooks/               # Scripts serveur PocketBase (Cron jobs)
+│   └── cleanup.pb.js       # Script de nettoyage automatique (15 heures)
 ├── pb_schema.json          # Structure de la base de données (voir détails ci-dessous)
 ├── compose.yaml            # Fichier de lancement local docker/Docker
 └── Caddyfile               # Configuration du serveur web local (émule Cloudflare)
