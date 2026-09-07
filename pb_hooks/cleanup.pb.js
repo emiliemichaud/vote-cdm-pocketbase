@@ -1,4 +1,4 @@
-cronAdd("cleanup_sessions", "*/1 * * * *", () => {
+cronAdd("cleanup_sessions", "0 * * * *", () => {
     try {
         const fifteenHoursAgo = new Date(Date.now() - 15 * 60 * 60 * 1000);
         const dateStr = fifteenHoursAgo.toISOString().replace("T", " ").substring(0, 19) + "Z";
