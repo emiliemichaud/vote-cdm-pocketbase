@@ -1,6 +1,15 @@
-const params = new URLSearchParams(window.location.search);
-const code = params.get("s");
-const hostSecret = params.get("t");
+let code = new URLSearchParams(window.location.search).get("s");
+let hostSecret = new URLSearchParams(window.location.search).get("t");
+
+if (code && hostSecret) {
+  sessionStorage.setItem("hostCode", code);
+  sessionStorage.setItem("hostSecret", hostSecret);
+  window.history.replaceState({}, '', '/host.html');
+} else {
+  code = sessionStorage.getItem("hostCode");
+  hostSecret = sessionStorage.getItem("hostSecret");
+}
+
 const app = document.getElementById("app");
 
 let session = null;

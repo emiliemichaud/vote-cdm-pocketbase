@@ -19,17 +19,28 @@ function voteUrlForCode(code) {
   return window.location.origin + "/" + code;
 }
 
-const RESERVED_PATH_NAMES = ["", "index.html", "vote.html", "host.html", "404.html"];
+const RESERVED_PATH_NAMES = ["", "vote", "index.html", "vote.html", "host.html", "404.html"];
 
 function getSessionCodeFromLocation() {
-  const fromQuery = new URLSearchParams(window.location.search).get("s");
-  if (fromQuery) return fromQuery;
+  let code = new URLSearchParams(window.location.search).get("s");
 
-  const segment = window.location.pathname.split("/").filter(Boolean).pop() || "";
-  if (!RESERVED_PATH_NAMES.includes(segment.toLowerCase())) {
-    return segment;
+  if (!code) {
+    const segment = window.location.pathname.split("/").filter(Boolean).pop() || "";
+    if (segment && !RESERVED_PATH_NAMES.includes(segment.toLowerCase())) {
+      code = segment;
+    }
   }
-  return null;
+
+  if (code) {
+    // Sauvegarde en session pour survivre aux rafraîchissements (F5)
+    sessionStorage.setItem("currentSessionCode", code);
+    // Masque le code de l'URL pour plus de discrétion (réécrit en /vote)
+    window.history.replaceState({}, '', '/vote');
+    return code;
+  }
+
+  // Si pas de code dans l'URL (ex: suite à un rafraîchissement), on cherche en session
+  return sessionStorage.getItem("currentSessionCode");
 }
 
 // created_at + 15h, au format "JJ.MM.AAAA à HH:MM"
