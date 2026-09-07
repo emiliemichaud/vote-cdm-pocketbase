@@ -32,6 +32,7 @@ let isQrModalOpen = false;
 let isDrawerOpen = false;
 
 function render() {
+  if (session === "closed") return;
   if (!session) {
     app.innerHTML = `<div class="card center hint">Chargement…</div>`;
     return;
@@ -284,7 +285,7 @@ async function closeSessionPermanently() {
   try {
     await pb.collection('sessions').delete(session.id);
     clearVoteTimer();
-    session = null;
+    session = "closed";
     app.innerHTML = `<div class="card center hint">Cette session a été clôturée et ses données ont été supprimées. <a href="index.html">Démarrer une nouvelle session</a></div>`;
   } catch(err) {
     alert("Erreur : " + err.message);
@@ -293,24 +294,28 @@ async function closeSessionPermanently() {
 }
 
 async function resetSessionForNewItem() {
-  if (!confirm("Remettre les votes à zéro pour un nouvel objet, dans cette même session ? Les votes actuels seront définitivement supprimés.")) {
-    return;
-  }
   const newBtn = document.getElementById("newBtn");
   if (newBtn) newBtn.disabled = true;
-
-  if (total > 0 || session.status === "results") {
-    let history = JSON.parse(sessionStorage.getItem("history_" + code) || "[]");
-    history.push({ numero: history.length + 1, pour: counts.pour, contre: counts.contre, abstention: counts.abstention, total: total });
-    sessionStorage.setItem("history_" + code, JSON.stringify(history));
-  }
-
+  
   try {
+    if (total > 0 || session.status === "results") {
+      const historyList = await pb.collection('history').getFullList({ filter: `session="${session.id}"` });
+      await pb.collection('history').create({
+        session: session.id,
+        numero: historyList.length + 1,
+        pour: counts.pour,
+        contre: counts.contre,
+        abstention: counts.abstention,
+        total: total
+      });
+    }
+
     const votes = await pb.collection('votes').getFullList({ filter: `session="${session.id}"` });
     await Promise.all(votes.map(v => pb.collection('votes').delete(v.id)));
     await pb.collection('sessions').update(session.id, { status: 'idle', voting_ends_at: "" });
-  } catch(err) {
-    alert("Erreur : " + err.message);
+  } catch(e) {
+    alert("Erreur : " + e.message);
+  } finally {
     if (newBtn) newBtn.disabled = false;
   }
 }
@@ -323,7 +328,7 @@ async function attachPbListeners() {
   pb.collection('sessions').subscribe(session.id, (e) => {
     if (e.action === 'delete') {
       clearVoteTimer();
-      session = null;
+      session = "closed";
       app.innerHTML = `<div class="card center hint">Cette session a été clôturée et ses données ont été supprimées. <a href="index.html">Démarrer une nouvelle session</a></div>`;
       return;
     }
@@ -456,17 +461,19 @@ async function downloadPdf() {
     $typst.addSource('/typ/showybox/lib/sections.typ', sections);
     $typst.addSource('/typ/showybox/lib/shadows.typ', shadows);
 
-    const dateStr = new Date().toLocaleString('fr-FR', {
-      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit'
-    });
+    const historyList = await pb.collection('history').getFullList({ filter: `session="${session.id}"`, sort: '+numero' });
+    const allResults = historyList.map(h => ({ numero: h.numero, pour: h.pour, contre: h.contre, abstention: h.abstention, total: h.total }));
 
-    const allResults = JSON.parse(sessionStorage.getItem("history_" + (session ? session.code : '')) || "[]");
     if (total > 0 || (session && session.status === "results")) {
       allResults.push({ numero: allResults.length + 1, pour: counts.pour, contre: counts.contre, abstention: counts.abstention, total: total });
     }
 
     const cardsTypst = allResults.map(r => `  [#vote-card(numero: ${r.numero}, pour: ${r.pour}, contre: ${r.contre}, abstention: ${r.abstention}, connexions: ${r.total})]`).join(',\n');
+
+    const dateStr = new Date().toLocaleString('fr-FR', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
 
     const typstCode = `
 #import "/typ/vote-card/lib.typ": vote-card

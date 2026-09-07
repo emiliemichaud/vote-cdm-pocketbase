@@ -45,8 +45,8 @@ function getSessionCodeFromLocation() {
 
 // created_at + 15h, au format "JJ.MM.AAAA à HH:MM"
 function formatExpiryDate(session) {
-  if (!session || !session.created_at) return null;
-  const created = new Date(session.created_at);
+  if (!session || !session.created) return null;
+  const created = new Date(session.created);
   const expiry = new Date(created.getTime() + 15 * 60 * 60 * 1000);
   const pad = (n) => String(n).padStart(2, "0");
   return `${pad(expiry.getDate())}.${pad(expiry.getMonth() + 1)}.${expiry.getFullYear()} à ${pad(expiry.getHours())}:${pad(expiry.getMinutes())}`;

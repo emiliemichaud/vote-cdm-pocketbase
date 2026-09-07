@@ -76,6 +76,8 @@ Ce fichier contient la déclaration des trois tables (collections) utilisées pa
    - Chaque vote est lié à une session. Il contient l'identifiant unique et anonyme du votant (`voterId`) pour bloquer le double vote, et son choix (`pour`, `contre`, `abstention`).
 3. **`presence`** : Gère le compteur de personnes en ligne.
    - Les participants actifs y enregistrent silencieusement leur présence toutes les 10 secondes. Le tableau de bord de l'organisateur écoute cette table et compte le nombre de personnes ayant mis à jour leur présence récemment.
+4. **`history`** : Sauvegarde permanente de l'historique des votes.
+   - À chaque fois qu'un vote est "Relancé", l'application supprime les bulletins individuels (`votes`) pour faire place nette, mais sauvegarde au préalable un résumé global (nombre de pour, contre, abstention) dans cette table. C'est elle qui permet de générer le PDF de fin de séance avec l'intégralité des tours de vote !
 
 *(Astuce : Pour arrêter l'environnement de test local, lancez `docker-compose down -v` dans le terminal).*
 

@@ -18,6 +18,7 @@ function statusLabel(s) {
 }
 
 function render() {
+  if (session === "closed") return;
   if (!session) { app.innerHTML = `<div class="card center hint">Chargement…</div>`; return; }
 
   if (session.status === "results") {
@@ -158,7 +159,7 @@ function attachPbListeners() {
 
   pb.collection('sessions').subscribe(session.id, (e) => {
     if (e.action === 'delete') {
-      session = null;
+      session = "closed";
       const expiryNote = document.getElementById("expiryNote");
       if (expiryNote) expiryNote.style.display = "none";
       app.innerHTML = `<div class="card center hint">Cette session a été clôturée et n'est plus disponible.</div>`;

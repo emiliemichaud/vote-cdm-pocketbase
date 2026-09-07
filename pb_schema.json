@@ -231,8 +231,8 @@
         "help": "",
         "hidden": false,
         "id": "text3208210256",
-        "max": 15,
-        "min": 15,
+        "max": 0,
+        "min": 0,
         "name": "id",
         "pattern": "^[a-z0-9]+$",
         "presentable": false,
@@ -246,7 +246,7 @@
         "help": "",
         "hidden": false,
         "id": "text1997877400",
-        "max": 0,
+        "max": 5,
         "min": 0,
         "name": "code",
         "pattern": "",
@@ -257,22 +257,19 @@
         "type": "text"
       },
       {
+        "autogeneratePattern": "",
         "help": "",
         "hidden": false,
-        "id": "select2063623452",
-        "maxSelect": 1,
+        "id": "text2063623452",
+        "max": 0,
+        "min": 0,
         "name": "status",
+        "pattern": "",
         "presentable": false,
+        "primaryKey": false,
         "required": true,
         "system": false,
-        "type": "select",
-        "values": [
-          "idle",
-          "voting",
-          "prolonged",
-          "stopped",
-          "results"
-        ]
+        "type": "text"
       },
       {
         "autogeneratePattern": "",
@@ -290,21 +287,44 @@
         "type": "text"
       },
       {
+        "autogeneratePattern": "",
         "help": "",
         "hidden": false,
-        "id": "date793571444",
-        "max": "",
-        "min": "",
+        "id": "text793571444",
+        "max": 0,
+        "min": 0,
         "name": "voting_ends_at",
+        "pattern": "",
         "presentable": false,
+        "primaryKey": false,
         "required": false,
         "system": false,
-        "type": "date"
+        "type": "text"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
       }
     ],
     "indexes": [],
     "created": "2026-09-07 08:46:33.733Z",
-    "updated": "2026-09-07 08:46:33.733Z",
+    "updated": "2026-09-07 09:59:44.324Z",
     "system": false
   },
   {
@@ -376,11 +396,31 @@
           "contre",
           "abstention"
         ]
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
       }
     ],
     "indexes": [],
     "created": "2026-09-07 08:46:42.480Z",
-    "updated": "2026-09-07 08:46:42.480Z",
+    "updated": "2026-09-07 09:56:26.525Z",
     "system": false
   },
   {
@@ -446,11 +486,151 @@
         "presentable": false,
         "system": false,
         "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
       }
     ],
     "indexes": [],
     "created": "2026-09-07 08:54:23.807Z",
-    "updated": "2026-09-07 09:09:40.566Z",
+    "updated": "2026-09-07 09:56:26.558Z",
+    "system": false
+  },
+  {
+    "id": "pbc_3068727201",
+    "listRule": "",
+    "viewRule": "",
+    "createRule": "",
+    "updateRule": "",
+    "deleteRule": "",
+    "name": "history",
+    "type": "base",
+    "fields": [
+      {
+        "autogeneratePattern": "[a-z0-9]{15}",
+        "help": "",
+        "hidden": false,
+        "id": "text3208210256",
+        "max": 0,
+        "min": 0,
+        "name": "id",
+        "pattern": "^[a-z0-9]+$",
+        "presentable": false,
+        "primaryKey": true,
+        "required": true,
+        "system": true,
+        "type": "text"
+      },
+      {
+        "cascadeDelete": true,
+        "collectionId": "pbc_3660498186",
+        "help": "",
+        "hidden": false,
+        "id": "relation3494172116",
+        "maxSelect": 1,
+        "minSelect": 0,
+        "name": "session",
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "relation"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "number4116373918",
+        "max": null,
+        "min": null,
+        "name": "numero",
+        "onlyInt": false,
+        "presentable": false,
+        "required": true,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "number3853741630",
+        "max": null,
+        "min": null,
+        "name": "pour",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "number2349920980",
+        "max": null,
+        "min": null,
+        "name": "contre",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "number13461447",
+        "max": null,
+        "min": null,
+        "name": "abstention",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "help": "",
+        "hidden": false,
+        "id": "number3257917790",
+        "max": null,
+        "min": null,
+        "name": "total",
+        "onlyInt": false,
+        "presentable": false,
+        "required": false,
+        "system": false,
+        "type": "number"
+      },
+      {
+        "hidden": false,
+        "id": "autodate2990389176",
+        "name": "created",
+        "onCreate": true,
+        "onUpdate": false,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      },
+      {
+        "hidden": false,
+        "id": "autodate3332085495",
+        "name": "updated",
+        "onCreate": true,
+        "onUpdate": true,
+        "presentable": false,
+        "system": false,
+        "type": "autodate"
+      }
+    ],
+    "indexes": [],
+    "created": "2026-09-07 09:42:44.976Z",
+    "updated": "2026-09-07 09:56:26.588Z",
     "system": false
   }
 ]
